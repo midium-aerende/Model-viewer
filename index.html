@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texte courbé centré</title>
+    <style>
+        body { margin: 0; overflow: hidden; width: 100vw; }
+        canvas { display: block; }
+
+        /* Styles pour le bouton */
+        #colorButton {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #colorButton:hover {
+            background-color: #444;
+        }
+    </style>
+</head>
+<body>
+    <!-- Bouton pour changer la couleur -->
+    <button id="colorButton">Changer la couleur</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/pmrem/PMREMGenerator.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+
+    <script>
+        const userInputText = prompt("Entrez le texte à afficher (par défaut : 'Andy')", "Andy");
+        const textToDisplay = userInputText ? userInputText : "Andy";
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        scene.background = new THREE.Color(0xd3d3d3);
+
+        // Ajouter une lumière ambiante
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Lumière ambiante
+        scene.add(ambientLight);
+
+        // Ajouter une lumière directionnelle pour les ombres
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 5, 5).normalize();
+        scene.add(directionalLight);
+
+        // Activer la capacité de recevoir et de générer des ombres
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Pour une ombre plus douce
+
+        // Configuration de la lumière directionnelle pour les ombres
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;  // Taille de la carte d'ombre
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 0.5; // Plage de la caméra d'ombre
+        directionalLight.shadow.camera.far = 10;
+
+        const loader = new THREE.GLTFLoader();
+        let model;
+        let defaultMaterial;
+        
+        loader.load('ring.glb', function (gltf) {
+            model = gltf.scene;
+
+            const box = new THREE.Box3().setFromObject(model);
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            model.position.sub(center);
+            scene.add(model);
+
+            // Appliquer un matériau par défaut et activer les ombres
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    // Enregistrer le matériau d'origine (or par défaut)
+                    defaultMaterial = new THREE.MeshStandardMaterial({
+                        color: 0xffa700, // Couleur or par défaut
+                        metalness: 1,
+                        roughness: 0.1
+                    });
+                    child.material = defaultMaterial;
+
+                    // Configurer pour que le modèle génère des ombres
+                    child.castShadow = true; // Le modèle génère des ombres
+                    child.receiveShadow = true; // Le modèle reçoit des ombres
+                }
+            });
+
+            // Créer le texte 3D avec un matériau par défaut et appliquer des ombres
+            createCurvedText3D(defaultMaterial);
+        }, undefined, function (error) {
+            console.error(error);
+        });
+
+        const hdrLoader = new THREE.RGBELoader();
+        hdrLoader.load('environment.hdr', function (texture) {
+            const pmremGenerator = new THREE.PMREMGenerator(renderer);
+            const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+            scene.environment = envMap;
+            texture.dispose();
+            pmremGenerator.dispose();
+        });
+
+        function createCurvedText3D(material) {
+            const fontLoader = new THREE.FontLoader();
+            fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function (font) {
+                const radius = 1.0;
+                const angleStep = Math.PI / (textToDisplay.length * 1.5);
+                const totalAngle = angleStep * (textToDisplay.length - 1);
+                const startAngle = -totalAngle / 2;
+
+                const yOffset = -0.1;
+
+                const group = new THREE.Group();
+
+                for (let i = 0; i < textToDisplay.length; i++) {
+                    const letterGeometry = new THREE.TextGeometry(textToDisplay[i], {
+                        font: font,
+                        size: 0.2,
+                        height: 0.01,
+                        curveSegments: 12,
+                        bevelEnabled: true,
+                        bevelThickness: 0.02,
+                        bevelSize: 0.02,
+                        bevelSegments: 5
+                    });
+
+                    const letterMesh = new THREE.Mesh(letterGeometry, material);
+                    const angle = startAngle + angleStep * i;
+
+                    letterMesh.position.set(
+                        Math.cos(angle) * radius,
+                        yOffset,
+                        Math.sin(angle) * radius
+                    );
+
+                    letterMesh.lookAt(new THREE.Vector3(0, 0, 0));
+
+                    // Appliquer des ombres aux lettres du texte
+                    letterMesh.castShadow = true;
+                    letterMesh.receiveShadow = true;
+
+                    group.add(letterMesh);
+                }
+
+                scene.add(group);
+                window.textGroup = group;
+            });
+        }
+
+        camera.position.z = 5;
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.25;
+        controls.screenSpacePanning = false;
+        controls.maxPolarAngle = Math.PI / 2;
+
+        let rotationSpeed = 0.01;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (model) {
+                model.rotation.y += rotationSpeed;
+            }
+
+            if (window.textGroup) {
+                window.textGroup.rotation.y += rotationSpeed;
+            }
+
+            controls.update();
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+
+        // Ajouter un écouteur d'événements pour le bouton
+        const button = document.getElementById('colorButton');
+        button.addEventListener('click', function() {
+            // Vérifier si le modèle et le texte existent avant de changer la couleur
+            if (model && window.textGroup) {
+                // Couleurs de l'or et de l'argent
+                const gold = 0xffa700;
+                const silver = 0xc0c0c0;
+
+                // Appliquer les couleurs or ou argent en changeant de couleur uniquement
+                const currentColor = defaultMaterial.color.getHex();
+                const newColor = (currentColor === gold) ? silver : gold;
+
+                // Appliquer cette couleur à tous les objets (modèle et texte)
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        // Garder le matériau d'origine et seulement changer la couleur
+                        child.material.color.setHex(newColor);
+                    }
+                });
+
+                window.textGroup.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.color.setHex(newColor);
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
